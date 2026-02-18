@@ -1,6 +1,7 @@
 import BackgroundFetch, {
   BackgroundFetchStatus,
   HeadlessEvent,
+  NetworkType,
 } from 'react-native-background-fetch';
 import {syncEngine} from '../sync';
 import {networkMonitor} from './NetworkMonitor';
@@ -64,7 +65,7 @@ export class BackgroundSyncService {
     return status;
   }
 
-  private getNetworkType(): number {
+  private getNetworkType(): NetworkType {
     switch (this.config.requiredNetworkType) {
       case 'unmetered':
         return BackgroundFetch.NETWORK_TYPE_UNMETERED;

@@ -30,7 +30,7 @@ export const syncMiddleware: Middleware = store => next => action => {
 
     // Trigger sync if online
     if (networkMonitor.isOnline() && !syncEngine.isRunning()) {
-      triggerSync(store.dispatch);
+      triggerSync(store.dispatch as (action: unknown) => void);
     }
   }
 

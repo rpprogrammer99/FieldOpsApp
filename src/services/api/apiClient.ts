@@ -3,11 +3,20 @@ import axios, {
   AxiosError,
   InternalAxiosRequestConfig,
   AxiosResponse,
+  AxiosRequestConfig,
 } from 'axios';
 import {API_CONFIG} from './endpoints';
 import type {ApiError, AuthTokens} from '../../types';
 
 let authTokens: AuthTokens | null = null;
+
+// Extend AxiosRequestConfig to include idempotency key
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    idempotencyKey?: string;
+    clientTimestamp?: number;
+  }
+}
 
 export function setAuthTokens(tokens: AuthTokens | null): void {
   authTokens = tokens;
@@ -30,12 +39,24 @@ const apiClient: AxiosInstance = axios.create({
   },
 });
 
-// Request interceptor - adds auth token
+// Request interceptor - adds auth token and idempotency headers
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     if (authTokens?.accessToken) {
       config.headers.Authorization = `Bearer ${authTokens.accessToken}`;
     }
+
+    // Add idempotency key header if provided
+    const extendedConfig = config as InternalAxiosRequestConfig & AxiosRequestConfig;
+    if (extendedConfig.idempotencyKey) {
+      config.headers['Idempotency-Key'] = extendedConfig.idempotencyKey;
+    }
+
+    // Add client timestamp for conflict resolution
+    if (extendedConfig.clientTimestamp) {
+      config.headers['X-Client-Timestamp'] = extendedConfig.clientTimestamp.toString();
+    }
+
     return config;
   },
   (error: AxiosError) => {

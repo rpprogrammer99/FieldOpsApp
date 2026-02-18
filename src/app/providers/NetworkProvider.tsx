@@ -1,6 +1,7 @@
 import React, {useEffect, ReactNode} from 'react';
 import {useAppDispatch} from '../../shared/hooks';
 import {networkMonitor, backgroundSyncService} from '../../services/network';
+import {syncEngine} from '../../services/sync';
 import {setNetworkState} from '../../store';
 import {setupNetworkSyncTrigger} from '../../store/middleware';
 
@@ -19,6 +20,9 @@ export function NetworkProvider({children}: NetworkProviderProps) {
       // Set initial state
       const state = networkMonitor.getState();
       dispatch(setNetworkState(state));
+
+      // Initialize sync engine (resets stuck processing items)
+      syncEngine.initialize();
 
       // Initialize background sync
       try {

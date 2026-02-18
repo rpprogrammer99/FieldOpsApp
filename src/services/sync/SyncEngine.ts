@@ -23,7 +23,7 @@ import type {
 } from './types';
 
 const DEFAULT_CONFIG: SyncEngineConfig = {
-  maxConcurrentSyncs: 1,
+  maxConcurrentSyncs: 3,
   batchSize: 10,
   retryDelayMs: 1000,
   maxRetries: 5,
@@ -80,6 +80,13 @@ export class SyncEngine {
     handlers.forEach(handler => handler(...args));
   }
 
+  /**
+   * Initialize the sync engine - should be called on app start
+   */
+  initialize(): void {
+    syncQueue.initialize();
+  }
+
   async start(): Promise<void> {
     if (this.state.isRunning) {
       return;
@@ -134,42 +141,57 @@ export class SyncEngine {
         continue;
       }
 
-      const item = syncQueue.dequeue();
+      // Get a batch of items for concurrent processing
+      const items = syncQueue.getBatch(this.config.maxConcurrentSyncs);
 
-      if (!item) {
+      if (items.length === 0) {
         break;
       }
 
-      this.state.currentItem = item;
-      syncQueue.markProcessing(item.id);
+      // Mark all items as processing
+      for (const item of items) {
+        syncQueue.markProcessing(item.id);
+      }
 
-      try {
-        const result = await this.processItem(item);
+      // Process items concurrently
+      const results = await Promise.allSettled(
+        items.map(item => this.processItemWithTracking(item)),
+      );
+
+      // Handle results
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const item = items[i];
         processed++;
 
-        if (result.success) {
-          syncQueue.markCompleted(item.id);
-          this.updateEntitySyncStatus(item, result);
-          succeeded++;
-        } else if (result.error?.code === 'CONFLICT') {
-          conflicts++;
-          // Conflict handling already done in processItem
+        if (result.status === 'fulfilled') {
+          const syncResult = result.value;
+
+          if (syncResult.success) {
+            syncQueue.markCompleted(item.id);
+            this.updateEntitySyncStatus(item, syncResult);
+            succeeded++;
+          } else if (syncResult.error?.code === 'CONFLICT') {
+            conflicts++;
+            // Conflict handling already done in processItem
+          } else {
+            syncQueue.markFailed(item.id, syncResult.error?.message || 'Unknown error');
+            failed++;
+          }
+
+          this.emit('itemProcessed', item, syncResult.success);
         } else {
-          syncQueue.markFailed(item.id, result.error?.message || 'Unknown error');
           failed++;
+          syncQueue.markFailed(item.id, result.reason?.message || 'Unknown error');
+          this.emit('itemProcessed', item, false);
         }
 
-        this.emit('itemProcessed', item, result.success);
-      } catch (error) {
-        failed++;
-        syncQueue.markFailed(item.id, (error as Error).message);
-        this.emit('itemProcessed', item, false);
+        this.state.processedCount++;
       }
 
       this.state.currentItem = null;
-      this.state.processedCount++;
 
-      // Small delay between items
+      // Small delay between batches
       await this.delay(100);
     }
 
@@ -184,6 +206,11 @@ export class SyncEngine {
     };
 
     this.emit('syncComplete', batchResult);
+  }
+
+  private async processItemWithTracking(item: SyncQueueItem): Promise<SyncResult> {
+    this.state.currentItem = item;
+    return this.processItem(item);
   }
 
   private async processItem(item: SyncQueueItem): Promise<SyncResult> {
@@ -221,15 +248,21 @@ export class SyncEngine {
   ): Promise<ServerResponse> {
     const endpoint = this.getEndpoint(item.entityType, item.operation, item.entityId);
 
+    // Include idempotency key and timestamp for all sync requests
+    const requestConfig = {
+      idempotencyKey: item.idempotencyKey,
+      clientTimestamp: new Date(item.createdAt).getTime(),
+    };
+
     switch (item.operation) {
       case 'CREATE':
-        return (await apiClient.post(endpoint, payload)).data;
+        return (await apiClient.post(endpoint, payload, requestConfig)).data;
 
       case 'UPDATE':
-        return (await apiClient.put(endpoint, payload)).data;
+        return (await apiClient.put(endpoint, payload, requestConfig)).data;
 
       case 'DELETE':
-        return (await apiClient.delete(endpoint)).data;
+        return (await apiClient.delete(endpoint, requestConfig)).data;
 
       default:
         throw new Error(`Unknown operation: ${item.operation}`);

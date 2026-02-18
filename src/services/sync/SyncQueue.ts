@@ -3,7 +3,6 @@ import type {
   EntityType,
   OperationType,
   SyncQueueItem,
-  SyncQueueStatus,
 } from '../../types';
 
 export interface QueuedOperation {
@@ -11,78 +10,123 @@ export interface QueuedOperation {
   entityId: string;
   operation: OperationType;
   payload: unknown;
+  priority?: number;
+}
+
+export interface EnqueueResult {
+  item: SyncQueueItem;
+  isDuplicate: boolean;
+  coalesced: boolean;
 }
 
 export class SyncQueue {
   private isProcessing = false;
+  private processingIds = new Set<string>();
 
-  enqueue(operation: QueuedOperation): SyncQueueItem {
-    // Check for existing pending operation for same entity
-    const existing = syncQueueRepository.findByEntity(
-      operation.entityType,
-      operation.entityId,
+  /**
+   * Initialize the queue - reset any stuck processing items
+   */
+  initialize(): void {
+    const resetCount = syncQueueRepository.resetStuckProcessing();
+    if (resetCount > 0) {
+      console.log(`Reset ${resetCount} stuck processing items`);
+    }
+  }
+
+  /**
+   * Enqueue an operation with deduplication and coalescing
+   */
+  enqueue(operation: QueuedOperation): EnqueueResult {
+    const {entityType, entityId, operation: opType, payload, priority = 5} = operation;
+
+    // Generate idempotency key for duplicate detection
+    const idempotencyKey = syncQueueRepository.generateIdempotencyKey(
+      entityType,
+      entityId,
+      opType,
+      payload,
     );
 
+    // Check for exact duplicate (same idempotency key)
+    const existingDuplicate = syncQueueRepository.findByIdempotencyKey(idempotencyKey);
+    if (existingDuplicate) {
+      return {
+        item: existingDuplicate,
+        isDuplicate: true,
+        coalesced: false,
+      };
+    }
+
+    // Check for existing pending operation for same entity (for coalescing)
+    const existing = syncQueueRepository.findByEntity(entityType, entityId);
     const pendingExisting = existing.find(
-      item => item.status === 'pending' || item.status === 'processing',
+      item =>
+        (item.status === 'pending' || item.status === 'processing') &&
+        !this.processingIds.has(item.id),
     );
 
     if (pendingExisting) {
       // If there's a pending CREATE and we're doing UPDATE, merge them
-      if (pendingExisting.operation === 'CREATE' && operation.operation === 'UPDATE') {
+      if (pendingExisting.operation === 'CREATE' && opType === 'UPDATE') {
         const mergedPayload = {
           ...JSON.parse(pendingExisting.payload),
-          ...operation.payload,
+          ...(payload as object),
         };
 
         syncQueueRepository.delete(pendingExisting.id);
 
-        return syncQueueRepository.enqueue(
-          operation.entityType,
-          operation.entityId,
+        const newItem = syncQueueRepository.enqueue(
+          entityType,
+          entityId,
           'CREATE',
           mergedPayload,
+          Math.min(priority, pendingExisting.priority),
         );
+
+        return {item: newItem, isDuplicate: false, coalesced: true};
       }
 
-      // If there's a pending operation and we're doing DELETE, remove pending and add DELETE
-      if (operation.operation === 'DELETE') {
+      // If there's a pending operation and we're doing DELETE
+      if (opType === 'DELETE') {
         syncQueueRepository.delete(pendingExisting.id);
 
         // If the pending was CREATE, we can skip the DELETE entirely
+        // Entity was created and deleted offline, no sync needed
         if (pendingExisting.operation === 'CREATE') {
-          // Entity was created and deleted offline, no sync needed
-          return pendingExisting; // Return the old item (it's been deleted)
+          return {item: pendingExisting, isDuplicate: false, coalesced: true};
         }
       }
 
       // For UPDATE operations, merge with existing UPDATE
-      if (
-        pendingExisting.operation === 'UPDATE' &&
-        operation.operation === 'UPDATE'
-      ) {
+      if (pendingExisting.operation === 'UPDATE' && opType === 'UPDATE') {
         const mergedPayload = {
           ...JSON.parse(pendingExisting.payload),
-          ...operation.payload,
+          ...(payload as object),
         };
 
         syncQueueRepository.delete(pendingExisting.id);
 
-        return syncQueueRepository.enqueue(
-          operation.entityType,
-          operation.entityId,
+        const newItem = syncQueueRepository.enqueue(
+          entityType,
+          entityId,
           'UPDATE',
           mergedPayload,
+          Math.min(priority, pendingExisting.priority),
         );
+
+        return {item: newItem, isDuplicate: false, coalesced: true};
       }
     }
 
-    return syncQueueRepository.enqueue(
-      operation.entityType,
-      operation.entityId,
-      operation.operation,
-      operation.payload,
+    const item = syncQueueRepository.enqueue(
+      entityType,
+      entityId,
+      opType,
+      payload,
+      priority,
     );
+
+    return {item, isDuplicate: false, coalesced: false};
   }
 
   dequeue(): SyncQueueItem | null {
@@ -94,15 +138,22 @@ export class SyncQueue {
     return pending[0] || null;
   }
 
+  getBatch(limit: number): SyncQueueItem[] {
+    return syncQueueRepository.getBatch(limit);
+  }
+
   markProcessing(id: string): void {
+    this.processingIds.add(id);
     syncQueueRepository.markProcessing(id);
   }
 
   markCompleted(id: string): void {
+    this.processingIds.delete(id);
     syncQueueRepository.markCompleted(id);
   }
 
   markFailed(id: string, error: string): void {
+    this.processingIds.delete(id);
     syncQueueRepository.markFailed(id, error);
   }
 
@@ -115,6 +166,7 @@ export class SyncQueue {
   }
 
   remove(id: string): boolean {
+    this.processingIds.delete(id);
     return syncQueueRepository.delete(id);
   }
 
@@ -161,6 +213,14 @@ export class SyncQueue {
 
   getIsProcessing(): boolean {
     return this.isProcessing;
+  }
+
+  isItemProcessing(id: string): boolean {
+    return this.processingIds.has(id);
+  }
+
+  getProcessingCount(): number {
+    return this.processingIds.size;
   }
 }
 

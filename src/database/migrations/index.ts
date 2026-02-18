@@ -26,6 +26,52 @@ const migrations: Migration[] = [
     },
   },
   {
+    version: 4,
+    name: 'add_sync_queue_idempotency',
+    up: (db: QuickSQLiteConnection) => {
+      // Add idempotency_key column
+      db.execute(`
+        ALTER TABLE ${TABLE_NAMES.SYNC_QUEUE}
+        ADD COLUMN idempotency_key TEXT DEFAULT '';
+      `);
+
+      // Add priority column
+      db.execute(`
+        ALTER TABLE ${TABLE_NAMES.SYNC_QUEUE}
+        ADD COLUMN priority INTEGER NOT NULL DEFAULT 5;
+      `);
+
+      // Add updated_at column
+      db.execute(`
+        ALTER TABLE ${TABLE_NAMES.SYNC_QUEUE}
+        ADD COLUMN updated_at TEXT DEFAULT '';
+      `);
+
+      // Generate idempotency keys for existing records
+      db.execute(`
+        UPDATE ${TABLE_NAMES.SYNC_QUEUE}
+        SET idempotency_key = entity_type || ':' || entity_id || ':' || operation || ':' || id,
+            updated_at = created_at
+        WHERE idempotency_key = '' OR idempotency_key IS NULL;
+      `);
+
+      // Add indexes
+      db.execute(`
+        CREATE INDEX IF NOT EXISTS idx_sync_queue_idempotency
+        ON ${TABLE_NAMES.SYNC_QUEUE}(idempotency_key);
+      `);
+      db.execute(`
+        CREATE INDEX IF NOT EXISTS idx_sync_queue_priority
+        ON ${TABLE_NAMES.SYNC_QUEUE}(priority, created_at);
+      `);
+    },
+    down: (db: QuickSQLiteConnection) => {
+      db.execute('DROP INDEX IF EXISTS idx_sync_queue_idempotency;');
+      db.execute('DROP INDEX IF EXISTS idx_sync_queue_priority;');
+      // SQLite doesn't support DROP COLUMN in older versions
+    },
+  },
+  {
     version: 2,
     name: 'add_work_order_tags',
     up: (db: QuickSQLiteConnection) => {
@@ -71,7 +117,9 @@ const migrations: Migration[] = [
 
 export async function runMigrations(db: QuickSQLiteConnection): Promise<void> {
   const currentVersion = getCurrentVersion(db);
-  const pendingMigrations = migrations.filter(m => m.version > currentVersion);
+  const pendingMigrations = migrations
+    .filter(m => m.version > currentVersion)
+    .sort((a, b) => a.version - b.version);
 
   if (pendingMigrations.length === 0) {
     console.log('No pending migrations');

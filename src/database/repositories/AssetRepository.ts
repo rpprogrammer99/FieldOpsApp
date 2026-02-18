@@ -38,7 +38,7 @@ export class AssetRepository extends BaseRepository<
   protected tableName = TABLE_NAMES.ASSETS;
 
   protected mapRowToEntity(row: Record<string, unknown>): Asset {
-    const r = row as AssetRow;
+    const r = row as unknown as AssetRow;
     return {
       id: r.id,
       name: r.name,

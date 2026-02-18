@@ -1,5 +1,6 @@
 import React from 'react';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import type {ComponentType} from 'react';
 import {
   WorkOrderListScreen,
   WorkOrderDetailScreen,
@@ -13,7 +14,7 @@ export function WorkOrderNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerBackTitleVisible: false,
+        headerBackButtonDisplayMode: 'minimal',
       }}>
       <Stack.Screen
         name="WorkOrderList"
@@ -35,7 +36,7 @@ export function WorkOrderNavigator() {
       />
       <Stack.Screen
         name="WorkOrderEdit"
-        component={WorkOrderCreateScreen}
+        component={WorkOrderCreateScreen as ComponentType<unknown>}
         options={{
           title: 'Edit Work Order',
           presentation: 'modal',

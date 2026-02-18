@@ -52,7 +52,7 @@ export class InspectionRepository extends BaseRepository<
   protected tableName = TABLE_NAMES.INSPECTIONS;
 
   protected mapRowToEntity(row: Record<string, unknown>): Inspection {
-    const r = row as InspectionRow;
+    const r = row as unknown as InspectionRow;
     const items = this.getInspectionItems(r.id);
 
     return {

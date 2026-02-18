@@ -6,11 +6,14 @@ export type EntityType = 'work_order' | 'inspection' | 'asset';
 
 export interface SyncQueueItem {
   id: string;
+  idempotencyKey: string;
   entityType: EntityType;
   entityId: string;
   operation: OperationType;
   payload: string;
+  priority: number;
   createdAt: string;
+  updatedAt: string;
   processedAt: string | null;
   retryCount: number;
   maxRetries: number;

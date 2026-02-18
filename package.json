@@ -20,28 +20,32 @@
     "@react-navigation/native-stack": "^7.3.4",
     "@reduxjs/toolkit": "^2.5.1",
     "axios": "^1.7.9",
+    "memoize-one": "^6.0.0",
     "react": "19.0.0",
     "react-hook-form": "^7.54.2",
     "react-native": "0.78.1",
     "react-native-background-fetch": "^4.2.5",
     "react-native-quick-sqlite": "^8.1.0",
     "react-native-safe-area-context": "^5.3.1",
-    "react-native-screens": "^4.10.0",
+    "react-native-screens": "4.10.0",
     "react-native-uuid": "^2.0.3",
     "react-redux": "^9.2.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@babel/core": "^7.26.9",
-    "babel-plugin-module-resolver": "^5.0.2",
     "@babel/preset-env": "^7.26.9",
-    "@babel/runtime": "^7.26.9",
+    "@babel/runtime": "^7.28.6",
+    "@react-native-community/cli": "^20.1.1",
+    "@react-native-community/cli-platform-android": "^20.1.1",
+    "@react-native-community/cli-platform-ios": "^20.1.1",
     "@react-native/babel-preset": "0.78.1",
     "@react-native/eslint-config": "0.78.1",
     "@react-native/metro-config": "0.78.1",
     "@react-native/typescript-config": "0.78.1",
     "@types/react": "^19.0.10",
     "@types/react-test-renderer": "^19.0.0",
+    "babel-plugin-module-resolver": "^5.0.2",
     "eslint": "^8.57.0",
     "jest": "^29.7.0",
     "prettier": "^3.4.2",
@@ -50,5 +54,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "overrides": {
+    "react-native-screens": "4.10.0"
   }
 }

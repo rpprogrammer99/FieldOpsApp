@@ -40,7 +40,7 @@ export class WorkOrderRepository extends BaseRepository<
   protected tableName = TABLE_NAMES.WORK_ORDERS;
 
   protected mapRowToEntity(row: Record<string, unknown>): WorkOrder {
-    const r = row as WorkOrderRow;
+    const r = row as unknown as WorkOrderRow;
     return {
       id: r.id,
       title: r.title,

@@ -35,7 +35,10 @@ export class ConflictResolver {
 
     switch (strategy) {
       case 'last_write_wins':
-        return lastWriteWins(localData as T & {localVersion?: number}, conflict);
+        return lastWriteWins(
+          localData as T & {localVersion?: number},
+          conflict as unknown as ConflictInfo<T & {localVersion?: number}>,
+        ) as unknown as MergeResult<T>;
 
       case 'server_wins':
         return serverWins(localData, conflict);
@@ -46,15 +49,18 @@ export class ConflictResolver {
       case 'field_level_merge':
         return fieldLevelMerge(
           localData as T & {_fieldVersions?: Record<string, number>},
-          conflict,
+          conflict as unknown as ConflictInfo<T & {_fieldVersions?: Record<string, number>}>,
           entityType,
-        );
+        ) as unknown as MergeResult<T>;
 
       case 'manual':
         return this.queueManualResolution(entityType, entityId, localData, conflict);
 
       default:
-        return lastWriteWins(localData as T & {localVersion?: number}, conflict);
+        return lastWriteWins(
+          localData as T & {localVersion?: number},
+          conflict as unknown as ConflictInfo<T & {localVersion?: number}>,
+        ) as unknown as MergeResult<T>;
     }
   }
 
