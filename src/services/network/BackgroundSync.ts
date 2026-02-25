@@ -1,3 +1,4 @@
+import {AppState, AppStateStatus} from 'react-native';
 import BackgroundFetch, {
   BackgroundFetchStatus,
   HeadlessEvent,
@@ -28,6 +29,7 @@ export class BackgroundSyncService {
   private static instance: BackgroundSyncService;
   private config: BackgroundSyncConfig;
   private isInitialized = false;
+  private appStateSubscription: {remove: () => void} | null = null;
 
   private constructor(config: Partial<BackgroundSyncConfig> = {}) {
     this.config = {...DEFAULT_CONFIG, ...config};
@@ -112,6 +114,13 @@ export class BackgroundSyncService {
         console.log('[BackgroundSync] No pending items to sync');
       }
 
+      // Check for race condition: Don't pull if sync is already running
+      if (syncEngine.isRunning()) {
+        console.log('[BackgroundSync] Sync engine running, skipping pull');
+        BackgroundFetch.finish(taskId);
+        return;
+      }
+
       // Also pull updates from server
       try {
         await syncEngine.pullUpdates();
@@ -135,10 +144,28 @@ export class BackgroundSyncService {
       await this.initialize();
     }
     await BackgroundFetch.start();
+    
+    // Listen for app resume
+    this.appStateSubscription = AppState.addEventListener(
+      'change',
+      this.handleAppStateChange,
+    );
+    
     console.log('[BackgroundSync] Started');
   }
 
+  private handleAppStateChange = async (nextAppState: AppStateStatus) => {
+    if (nextAppState === 'active') {
+      console.log('[BackgroundSync] App resumed, checking for sync');
+      await this.onNetworkAvailable();
+    }
+  };
+
   async stop(): Promise<void> {
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
+    }
     await BackgroundFetch.stop();
     console.log('[BackgroundSync] Stopped');
   }

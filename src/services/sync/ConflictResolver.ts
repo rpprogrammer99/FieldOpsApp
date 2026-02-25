@@ -9,10 +9,10 @@ export interface ConflictResolverConfig {
 }
 
 const DEFAULT_CONFIG: ConflictResolverConfig = {
-  defaultStrategy: 'field_level_merge',
+  defaultStrategy: 'last_write_wins',
   entityStrategies: {
-    work_order: 'field_level_merge',
-    inspection: 'field_level_merge',
+    work_order: 'last_write_wins',
+    inspection: 'last_write_wins',
     asset: 'last_write_wins',
   },
 };

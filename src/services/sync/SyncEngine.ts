@@ -2,6 +2,7 @@ import {apiClient} from '../api';
 import {ENDPOINTS} from '../api/endpoints';
 import {syncQueue} from './SyncQueue';
 import {conflictResolver} from './ConflictResolver';
+import {networkMonitor} from '../network/NetworkMonitor'; // Added import
 import {
   workOrderRepository,
   inspectionRepository,
@@ -44,6 +45,7 @@ export class SyncEngine {
   private eventHandlers: Map<SyncEventType, Function[]> = new Map();
   private syncPromise: Promise<void> | null = null;
   private abortController: AbortController | null = null;
+  private networkUnsubscribe: (() => void) | null = null; // Added subscription handle
 
   constructor(config: Partial<SyncEngineConfig> = {}) {
     this.config = {...DEFAULT_CONFIG, ...config};
@@ -83,8 +85,23 @@ export class SyncEngine {
   /**
    * Initialize the sync engine - should be called on app start
    */
-  initialize(): void {
+  async initialize(): Promise<void> {
     syncQueue.initialize();
+    await networkMonitor.initialize();
+    
+    // Subscribe to network changes
+    this.networkUnsubscribe = networkMonitor.subscribe((state) => {
+      this.handleNetworkChange(state);
+    });
+  }
+
+  private handleNetworkChange(state: {isConnected: boolean}): void {
+    if (state.isConnected && this.state.isPaused) {
+      this.resume();
+    } else if (!state.isConnected && !this.state.isPaused) {
+      this.pause();
+    }
+    this.emit('networkChange', state);
   }
 
   async start(): Promise<void> {
@@ -117,6 +134,10 @@ export class SyncEngine {
       this.abortController.abort();
       this.abortController = null;
     }
+    if (this.networkUnsubscribe) {
+      this.networkUnsubscribe();
+      this.networkUnsubscribe = null;
+    }
     this.state.isRunning = false;
   }
 
@@ -136,8 +157,8 @@ export class SyncEngine {
     let conflicts = 0;
 
     while (!this.abortController?.signal.aborted) {
-      if (this.state.isPaused) {
-        await this.delay(1000);
+      if (this.state.isPaused || !networkMonitor.isOnline()) {
+        await this.delay(1000); // Wait if paused or offline
         continue;
       }
 

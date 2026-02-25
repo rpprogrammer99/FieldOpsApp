@@ -20,6 +20,7 @@ export {
   selectIsOnline,
   selectNetworkStatus,
   selectConnectionType,
+  selectNetworkState,
 } from './networkSlice';
 
 export {

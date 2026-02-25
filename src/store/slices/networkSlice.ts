@@ -53,3 +53,5 @@ export const selectNetworkStatus = (state: {network: NetworkSliceState}) =>
 
 export const selectConnectionType = (state: {network: NetworkSliceState}) =>
   state.network.connectionType;
+export const selectNetworkState = (state: {network: NetworkSliceState}) =>
+  state.network;
